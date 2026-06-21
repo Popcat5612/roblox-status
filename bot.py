@@ -14,7 +14,6 @@ EXPLOIT_FILE = "exploit_status.json"
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 
-
 # ---------------- Roblox Version ----------------
 
 def get_current_version():
@@ -74,6 +73,8 @@ async def check_roblox_version():
             inline=False
         )
 
+        embed.timestamp = discord.utils.utcnow()
+
         channel = client.get_channel(CHANNEL_ID)
 
         if channel:
@@ -108,6 +109,22 @@ def save_exploit_data(data):
         json.dump(data, f, indent=4)
 
 
+def format_update_status(status):
+    if status is True:
+        return "🟡 Updating"
+    elif status is False:
+        return "🟢 Updated"
+    return "⚪ Unknown"
+
+
+def format_detected_status(status):
+    if status is True:
+        return "🔴 Detected"
+    elif status is False:
+        return "🟢 Undetected"
+    return "⚪ Unknown"
+
+
 @tasks.loop(minutes=1)
 async def check_exploits():
 
@@ -119,6 +136,8 @@ async def check_exploits():
     saved_data = load_exploit_data()
 
     channel = client.get_channel(CHANNEL_ID)
+
+    changes = []
 
     for exploit in current_data:
 
@@ -136,38 +155,48 @@ async def check_exploits():
 
         old = saved_data[name]
 
-        if current != old:
+        if (
+            current["version"] != old["version"]
+            or current["status"] != old["status"]
+            or current["detected"] != old["detected"]
+        ):
 
-            embed = discord.Embed(
-                title="🔔 Exploit 상태 변경",
-                description=f"**{name}**",
-                color=0x3498db
-            )
+            changes.append({
+                "name": name,
+                "old_version": old["version"],
+                "new_version": current["version"],
+                "status": current["status"],
+                "detected": current["detected"]
+            })
 
-            embed.add_field(
-                name="버전",
-                value=f"`{old['version']}` → `{current['version']}`",
-                inline=False
-            )
-
-            embed.add_field(
-                name="상태",
-                value=f"`{old['status']}` → `{current['status']}`",
-                inline=False
-            )
-
-            embed.add_field(
-                name="탐지 여부",
-                value=f"`{old['detected']}` → `{current['detected']}`",
-                inline=False
-            )
-
-            if channel:
-                await channel.send(embed=embed)
-
-            saved_data[name] = current
+        saved_data[name] = current
 
     save_exploit_data(saved_data)
+
+    if changes and channel:
+
+        embed = discord.Embed(
+            title="🔔 Exploit 상태 변경",
+            color=0x3498db
+        )
+
+        for change in changes:
+            embed.add_field(
+                name=change["name"],
+                value=(
+                    f"📦 Version\n"
+                    f"`{change['old_version']}` → `{change['new_version']}`\n\n"
+                    f"🛠 Status\n"
+                    f"{format_update_status(change['status'])}\n\n"
+                    f"🛡 Detection\n"
+                    f"{format_detected_status(change['detected'])}"
+                ),
+                inline=False
+            )
+
+        embed.timestamp = discord.utils.utcnow()
+
+        await channel.send(embed=embed)
 
 
 @client.event

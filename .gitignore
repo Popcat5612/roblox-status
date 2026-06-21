@@ -3,3 +3,5 @@ version.json
 exploit_status.json
 __pycache__/
 *.pyc
+version.json
+exploit_status.json
