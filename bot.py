@@ -10,6 +10,7 @@ CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 
 VERSION_FILE = "version.json"
 EXPLOIT_FILE = "exploit_status.json"
+STATUS_MESSAGE_FILE = "status_message.json"
 
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
@@ -21,23 +22,25 @@ def get_current_version():
         response = requests.get(
             "https://weao.xyz/api/versions/current",
             headers={"User-Agent": "WEAO-3PService"},
-            timeout=10
+            timeout=15
         )
         return response.json()["Windows"]
-    except:
+
+    except Exception as e:
+        print(f"Roblox API 오류: {e}")
         return None
 
 
 def load_version():
     if os.path.exists(VERSION_FILE):
-        with open(VERSION_FILE, "r") as f:
+        with open(VERSION_FILE, "r", encoding="utf-8") as f:
             return json.load(f).get("version")
     return None
 
 
 def save_version(version):
-    with open(VERSION_FILE, "w") as f:
-        json.dump({"version": version}, f)
+    with open(VERSION_FILE, "w", encoding="utf-8") as f:
+        json.dump({"version": version}, f, indent=4)
 
 
 @tasks.loop(minutes=1)
@@ -90,23 +93,37 @@ def get_exploit_status():
         response = requests.get(
             "https://weao.xyz/api/status/exploits",
             headers={"User-Agent": "WEAO-3PService"},
-            timeout=10
+            timeout=15
         )
         return response.json()
-    except:
+
+    except Exception as e:
+        print(f"WEAO API 오류: {e}")
         return []
 
 
 def load_exploit_data():
     if os.path.exists(EXPLOIT_FILE):
-        with open(EXPLOIT_FILE, "r") as f:
+        with open(EXPLOIT_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
 
 
 def save_exploit_data(data):
-    with open(EXPLOIT_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+    with open(EXPLOIT_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
+
+def load_status_message():
+    if os.path.exists(STATUS_MESSAGE_FILE):
+        with open(STATUS_MESSAGE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f).get("message_id")
+    return None
+
+
+def save_status_message(message_id):
+    with open(STATUS_MESSAGE_FILE, "w", encoding="utf-8") as f:
+        json.dump({"message_id": message_id}, f, indent=4)
 
 
 def format_update_status(status):
@@ -121,7 +138,7 @@ def format_detected_status(status):
     if status is True:
         return "🔴 Detected"
     elif status is False:
-        return "🟢 Undetected"
+        return "🟢 Safe"
     return "⚪ Unknown"
 
 
@@ -134,7 +151,6 @@ async def check_exploits():
         return
 
     saved_data = load_exploit_data()
-
     channel = client.get_channel(CHANNEL_ID)
 
     changes = []
@@ -165,42 +181,68 @@ async def check_exploits():
                 "name": name,
                 "old_version": old["version"],
                 "new_version": current["version"],
-                "status": current["status"],
-                "detected": current["detected"]
+                "old_status": old["status"],
+                "new_status": current["status"],
+                "old_detected": old["detected"],
+                "new_detected": current["detected"]
             })
 
         saved_data[name] = current
 
     save_exploit_data(saved_data)
 
-    if changes and channel:
+    if not changes or not channel:
+        return
 
-        embed = discord.Embed(
-            title="🔔 Exploit 상태 변경",
-            color=0x3498db
+    embed = discord.Embed(
+        title="🔔 Exploit 상태 변경",
+        color=0x3498db
+    )
+
+    for change in changes:
+
+        embed.add_field(
+            name=f"📌 {change['name']}",
+            value=(
+                f"📦 **Version**\n"
+                f"`{change['old_version']}` → `{change['new_version']}`\n\n"
+
+                f"🛠 **Status**\n"
+                f"{format_update_status(change['old_status'])}"
+                f" → "
+                f"{format_update_status(change['new_status'])}\n\n"
+
+                f"🛡 **Detection**\n"
+                f"{format_detected_status(change['old_detected'])}"
+                f" → "
+                f"{format_detected_status(change['new_detected'])}"
+            ),
+            inline=False
         )
 
-        for change in changes:
-            embed.add_field(
-                name=change["name"],
-                value=(
-                    f"📦 Version\n"
-                    f"`{change['old_version']}` → `{change['new_version']}`\n\n"
-                    f"🛠 Status\n"
-                    f"{format_update_status(change['status'])}\n\n"
-                    f"🛡 Detection\n"
-                    f"{format_detected_status(change['detected'])}"
-                ),
-                inline=False
-            )
+    embed.set_footer(text="WEAO Exploit Monitor")
+    embed.timestamp = discord.utils.utcnow()
 
-        embed.timestamp = discord.utils.utcnow()
+    message_id = load_status_message()
 
-        await channel.send(embed=embed)
+    try:
+        if message_id:
+            message = await channel.fetch_message(message_id)
+            await message.edit(embed=embed)
+        else:
+            message = await channel.send(embed=embed)
+            save_status_message(message.id)
 
+    except discord.NotFound:
+        message = await channel.send(embed=embed)
+        save_status_message(message.id)
+
+
+# ---------------- Ready ----------------
 
 @client.event
 async def on_ready():
+
     print(f"{client.user} 로그인 완료")
 
     if not check_roblox_version.is_running():
