@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: weao-discord-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false          # Render 대시보드에서 직접 입력
+      - key: EXPLOIT_CHANNEL_ID
+        sync: false
+      - key: VERSION_CHANNEL_ID
+        sync: false
+      - key: POLL_INTERVAL_SECONDS
+        value: "60"

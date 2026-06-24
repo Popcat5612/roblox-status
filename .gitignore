@@ -1,8 +1,23 @@
+# 환경변수
 .env
-
-version.json
-exploit_status.json
-status_message.json
-
+.env.*
+ 
+# 상태 저장 JSON (재시작 시 메세지 ID 등)
+*.json
+ 
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+ 
+# OS
+.DS_Store
+Thumbs.db
+ 
+# IDE
+.vscode/
+.idea/
+ 
