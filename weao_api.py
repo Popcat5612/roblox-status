@@ -34,6 +34,7 @@ class ExploitStatus:
     key_system: Optional[bool] = None
     rbxversion: Optional[str] = None
     hidden: bool = False
+    extype: str = ""          # wexternal / wexecutor / mexecutor / iexecutor / aexecutor
 
     @classmethod
     def from_dict(cls, d: dict) -> "ExploitStatus":
@@ -58,6 +59,7 @@ class ExploitStatus:
             key_system=d.get("keysystem"),
             rbxversion=d.get("rbxversion"),
             hidden=d.get("hidden", False),
+            extype=d.get("extype", ""),
         )
 
     @property

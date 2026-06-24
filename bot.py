@@ -119,25 +119,84 @@ def make_version_embed(cur: RobloxVersions, fut: RobloxVersions, past: RobloxVer
 
 
 def make_summary_embed(exploits: list[ExploitStatus]) -> discord.Embed:
-    """전체 요약 Embed — 채널 최상단 고정용"""
-    updated = [e for e in exploits if e.update_status and not e.detected]
-    detected = [e for e in exploits if e.update_status and e.detected]
-    outdated = [e for e in exploits if not e.update_status]
+    """
+    전체 요약 Embed — 플랫폼별 섹션으로 정렬
+    순서: Windows External → iOS Executor → Android Executor → Mac Executor → Windows Executor
+    """
+
+    # extype 기준 정렬 순서
+    SECTION_ORDER = [
+        ("wexternal",  "🖥️  Windows External"),
+        ("iexecutor",  "🍎  iOS Script Executor"),
+        ("aexecutor",  "🤖  Android Script Executor"),
+        ("mexecutor",  "💻  Mac Script Executor"),
+        ("wexecutor",  "🪟  Windows Script Executor"),
+    ]
+
+    # 플랫폼별 버킷으로 분류
+    buckets: dict[str, list[ExploitStatus]] = {k: [] for k, _ in SECTION_ORDER}
+    other: list[ExploitStatus] = []
+    for ex in exploits:
+        t = ex.extype.lower()
+        if t in buckets:
+            buckets[t].append(ex)
+        else:
+            other.append(ex)
+
+    total = len(exploits)
+    updated_n = sum(1 for e in exploits if e.update_status and not e.detected)
+    detected_n = sum(1 for e in exploits if e.update_status and e.detected)
+    outdated_n = sum(1 for e in exploits if not e.update_status)
 
     embed = discord.Embed(
         title="📊  익스플로잇 전체 현황",
+        description=(
+            f"총 **{total}개** 추적 중  •  "
+            f"🟢 정상 **{updated_n}**  •  "
+            f"🟡 감지됨 **{detected_n}**  •  "
+            f"🔴 미업데이트 **{outdated_n}**"
+        ),
         color=discord.Color.blurple(),
         timestamp=datetime.now(timezone.utc),
     )
 
-    def fmt(lst: list[ExploitStatus]) -> str:
+    def fmt_section(lst: list[ExploitStatus]) -> str:
         if not lst:
-            return "없음"
-        return "\n".join(f"{e.status_emoji} **{e.title}** `{e.version}`" for e in lst)
+            return "*없음*"
+        lines = []
+        for e in lst:
+            # 버전 + UNC 뱃지
+            badges = ""
+            if e.unc_status:
+                pct = f" {e.unc_percentage}%" if e.unc_percentage is not None else ""
+                badges += f" `UNC{pct}`"
+            if e.sunc_percentage is not None:
+                badges += f" `sUNC {e.sunc_percentage}%`"
+            price = "무료" if e.free else (e.cost or "유료")
+            lines.append(
+                f"{e.status_emoji} **{e.title}**  `{e.version}`  •  {price}{badges}"
+            )
+        return "\n".join(lines)
 
-    embed.add_field(name=f"🟢 정상 ({len(updated)})", value=fmt(updated), inline=False)
-    embed.add_field(name=f"🟡 감지됨 ({len(detected)})", value=fmt(detected), inline=False)
-    embed.add_field(name=f"🔴 미업데이트 ({len(outdated)})", value=fmt(outdated), inline=False)
+    for extype_key, section_name in SECTION_ORDER:
+        bucket = buckets[extype_key]
+        u = sum(1 for e in bucket if e.update_status and not e.detected)
+        d = sum(1 for e in bucket if e.update_status and e.detected)
+        o = sum(1 for e in bucket if not e.update_status)
+        counter = f"🟢{u} 🟡{d} 🔴{o}"
+        embed.add_field(
+            name=f"{section_name}  ({len(bucket)})  {counter}",
+            value=fmt_section(bucket),
+            inline=False,
+        )
+
+    if other:
+        embed.add_field(
+            name=f"❓  기타  ({len(other)})",
+            value=fmt_section(other),
+            inline=False,
+        )
+
     embed.set_footer(text="WEAO API · 자동 업데이트")
     return embed
 
