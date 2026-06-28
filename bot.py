@@ -10,7 +10,6 @@ import logging
 from datetime import datetime, timezone
 
 import discord
-from discord.ext import tasks
 
 from weao_api import WeaoClient, WeaoAPIError, ExploitStatus, RobloxVersions
 from config import (
@@ -215,15 +214,32 @@ class WeaoBot(discord.Client):
 
     async def setup_hook(self):
         await self.weao.start()
-        self.poll_loop.start()
+        # Flask 스레드와 충돌 없이 동작하도록 asyncio.create_task 사용
+        self._poll_task = asyncio.create_task(self._poll_runner())
 
     async def close(self):
-        self.poll_loop.cancel()
+        self._poll_task.cancel()
+        try:
+            await self._poll_task
+        except asyncio.CancelledError:
+            pass
         await self.weao.close()
         await super().close()
 
     async def on_ready(self):
         log.info(f"✅ 로그인: {self.user}  |  폴링 간격: {POLL_INTERVAL_SECONDS}초")
+
+    async def _poll_runner(self):
+        """봇 준비 후 POLL_INTERVAL_SECONDS마다 폴링"""
+        await self.wait_until_ready()
+        log.info("폴링 시작")
+        while not self.is_closed():
+            try:
+                await self._poll_exploits()
+                await self._poll_versions()
+            except Exception as e:
+                log.error(f"폴링 루프 오류: {e}")
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
     # ── 메세지 관리 헬퍼 ──────────────────────────────────────
 
@@ -252,22 +268,6 @@ class WeaoBot(discord.Client):
         msg = await channel.send(embed=embed)
         ch_cache[cache_key] = msg.id
         return msg
-
-    # ── 폴링 루프 ─────────────────────────────────────────────
-
-    @tasks.loop(seconds=POLL_INTERVAL_SECONDS)
-    async def poll_loop(self):
-        await self._poll_exploits()
-        await self._poll_versions()
-
-    @poll_loop.before_loop
-    async def before_poll(self):
-        await self.wait_until_ready()
-        log.info("폴링 시작")
-
-    @poll_loop.error
-    async def poll_error(self, error: Exception):
-        log.error(f"폴링 루프 오류: {error}")
 
     # ── 익스플로잇 폴링 ───────────────────────────────────────
 
